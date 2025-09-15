@@ -7,9 +7,14 @@ export XDG_CONFIG_HOME="$HOME/.config"
 
 # pnpm
 export PNPM_HOME="/Users/jmd/Library/pnpm"
-export PATH="$PNPM_HOME:$PATH"
+case ":$PATH:" in
+  *":$PNPM_HOME:"*) ;;
+  *) export PATH="$PNPM_HOME:$PATH" ;;
+esac
 # pnpm end
 
 # bun completions
 [ -s "/Users/jmd/.bun/_bun" ] && source "/Users/jmd/.bun/_bun"
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
+
+alias claude="/Users/jmd/.claude/local/claude"

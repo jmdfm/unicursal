@@ -89,3 +89,179 @@ function dev-env(){
 
   tmux attach -t "$project_name"
  }
+
+ # Git worktree function - creates a new worktree in an adjacent directory or removes existing ones
+wt() {
+    # Check if at least one argument was provided
+    if [ -z "$1" ]; then
+        echo "Usage: wt <feature-name> | wt remove <feature-name>"
+        echo "Examples:"
+        echo "  wt new-login-page          # Create new worktree"
+        echo "  wt remove new-login-page   # Remove existing worktree"
+        return 1
+    fi
+
+    # Check if first argument is the remove subcommand
+    if [ "$1" = "remove" ]; then
+        # Handle remove subcommand
+        _wt_remove "$2"
+        return $?
+    fi
+
+    # Store the feature name from the first argument
+    local feature_name="$1"
+
+    # Get the current directory name (project folder name)
+    local current_dir=$(basename "$(pwd)")
+
+    # Get the parent directory path
+    local parent_dir=$(dirname "$(pwd)")
+
+    # Create the worktrees directory name by appending '-worktrees' to current project name
+    local worktrees_dir="${current_dir}-worktrees"
+
+    # Create the full path to the worktrees directory
+    local worktrees_path="${parent_dir}/${worktrees_dir}"
+
+    # Check if we're in a git repository
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        echo "❌ Error: Not in a git repository"
+        return 1
+    fi
+
+    # Create the worktrees directory if it doesn't exist
+    if [ ! -d "$worktrees_path" ]; then
+        echo "📁 Creating worktrees directory: $worktrees_path"
+        mkdir -p "$worktrees_path"
+    fi
+
+    # Create the full path for the new worktree
+    local worktree_path="${worktrees_path}/${feature_name}"
+
+    # Check if worktree directory already exists
+    if [ -d "$worktree_path" ]; then
+        echo "❌ Error: Worktree directory already exists: $worktree_path"
+        return 1
+    fi
+
+    # Create the git worktree with a new branch
+    echo "🌿 Creating git worktree and branch '$feature_name'..."
+    git worktree add -b "$feature_name" "$worktree_path"
+
+    # Check if the worktree creation was successful
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to create worktree"
+        return 1
+    fi
+
+    # Copy .env file if it exists in the current directory
+    if [ -f ".env" ]; then
+        cp ".env" "$worktree_path/.env"
+        echo "📄 Copied .env to worktree"
+    fi
+
+    # List of hidden folders to copy
+    local hidden_folders=(.claude)
+
+    # Loop through each hidden folder and copy if it exists
+    for dir in "${hidden_folders[@]}"; do
+        if [ -d "$dir" ]; then
+            cp -R "$dir" "$worktree_path"
+            echo "📄 Copied $dir into worktree $worktree_path"
+        fi
+    done
+
+    # Change to the new worktree directory
+    cd "$worktree_path"
+
+    # Run pnpm install if package.json exists
+    if [ -f "package.json" ]; then
+        echo "📦 Running pnpm install in worktree..."
+        pnpm install
+        # Check if pnpm install was successful
+        if [ $? -eq 0 ]; then
+            echo "✅ pnpm install completed successfully"
+        else
+            echo "⚠️  pnpm install encountered issues"
+        fi
+    else
+        echo "ℹ️  No package.json found, skipping pnpm install"
+    fi
+
+    # Display success message
+    echo ""
+    echo "✅ Successfully created worktree:"
+    echo "   Branch: $feature_name"
+    echo "   Location: $worktree_path"
+    echo "   Current directory: $(pwd)"
+    echo ""
+    echo "🎉 You're now in the new worktree!"
+}
+
+# Helper function to remove worktrees
+_wt_remove() {
+    # Check if feature name was provided for removal
+    if [ -z "$1" ]; then
+        echo "❌ Usage: wt remove <feature-name>"
+        echo "Example: wt remove new-login-page"
+        return 1
+    fi
+
+    # Store the feature name to remove
+    local feature_name="$1"
+
+    # Get the current directory name (project folder name)
+    local current_dir=$(basename "$(pwd)")
+
+    # Get the parent directory path
+    local parent_dir=$(dirname "$(pwd)")
+
+    # Create the worktrees directory name by appending '-worktrees' to current project name
+    local worktrees_dir="${current_dir}-worktrees"
+
+    # Create the full path to the worktrees directory
+    local worktrees_path="${parent_dir}/${worktrees_dir}"
+
+    # Create the full path for the worktree to remove
+    local worktree_path="${worktrees_path}/${feature_name}"
+
+    # Check if we're in a git repository
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        echo "❌ Error: Not in a git repository"
+        return 1
+    fi
+
+    # Check if worktree directory exists
+    if [ ! -d "$worktree_path" ]; then
+        echo "❌ Error: Worktree directory does not exist: $worktree_path"
+        return 1
+    fi
+
+    # Remove the git worktree
+    echo "🗑️  Removing git worktree '$feature_name'..."
+    git worktree remove "$worktree_path"
+
+    # Check if worktree removal was successful
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to remove worktree"
+        return 1
+    fi
+
+    # Delete the branch (force delete to handle unmerged branches)
+    echo "🌿 Deleting branch '$feature_name'..."
+    git branch -D "$feature_name"
+
+    # Check if branch deletion was successful
+    if [ $? -eq 0 ]; then
+        echo "✅ Successfully removed worktree and deleted branch '$feature_name'"
+    else
+        echo "⚠️  Worktree removed but failed to delete branch '$feature_name'"
+        echo "   You may need to delete it manually: git branch -D $feature_name"
+    fi
+
+    # Check if worktrees directory is empty and remove it
+    if [ -d "$worktrees_path" ] && [ -z "$(ls -A "$worktrees_path")" ]; then
+        echo "🧹 Removing empty worktrees directory..."
+        rmdir "$worktrees_path"
+    fi
+}
